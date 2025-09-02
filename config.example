@@ -1,0 +1,13 @@
+# OpenRouter API 密钥配置示例
+
+# 从 https://openrouter.ai/ 获取你的 API 密钥
+OPENROUTER_API_KEY=your_api_key_here
+
+# 使用方法：
+# 1. 在终端中运行：export OPENROUTER_API_KEY=your_actual_api_key
+# 2. 然后运行程序：cargo run
+# 
+# 或者创建 .env 文件并使用 source 命令：
+# echo "export OPENROUTER_API_KEY=your_actual_api_key" > .env
+# source .env
+# cargo run
