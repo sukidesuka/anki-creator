@@ -84,7 +84,20 @@ impl AnkiCreator {
     // 创建新实例
     pub async fn new(api_key: String) -> Result<Self> {
         let client = Client::new();
-        let pool = SqlitePool::connect("sqlite:anki_cards.db").await?;
+        
+        // 创建数据库文件路径
+        let db_path = std::env::current_dir()?.join("anki_cards.db");
+        let db_url = format!("sqlite:{}", db_path.display());
+        
+        println!("💾 连接数据库: {}", db_path.display());
+        
+        // 如果数据库文件不存在，先创建一个空文件
+        if !db_path.exists() {
+            std::fs::File::create(&db_path)?;
+            println!("✨ 创建新数据库文件: {}", db_path.display());
+        }
+        
+        let pool = SqlitePool::connect(&db_url).await?;
         
         // 初始化数据库表
         sqlx::query(

@@ -1,1 +1,9 @@
 /target
+
+.DS_Store
+
+WARP.md
+
+anki_cards.db
+japanese_words.csv
+japanese_grammar.csv
