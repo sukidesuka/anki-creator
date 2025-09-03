@@ -5,13 +5,14 @@ use anki_creator::{Config, AnkiCreator};
 fn show_menu() -> Result<i32> {
     println!("\n🎌 日语 Anki 卡片生成器");
     println!("请选择功能：");
-    println!("1. 读取文章并解析生成卡片");
-    println!("2. 更新所有单词词性");
-    println!("3. 重新生成卡片文件");
-    println!("4. 更新所有单词解析");
-    println!("5. 根据ID更新单词解析");
+    println!("1. 解析单词");
+    println!("2. 解析语法");
+    println!("3. 更新所有单词词性");
+    println!("4. 重新生成卡片文件");
+    println!("5. 更新所有单词解析");
+    println!("6. 根据ID更新单词解析");
     println!("0. 退出程序");
-    print!("请输入选项 (0-5): ");
+    print!("请输入选项 (0-6): ");
     
     use std::io::{self, Write};
     io::stdout().flush()?;
@@ -42,7 +43,7 @@ async fn main() -> Result<()> {
     loop {
         match show_menu()? {
             1 => {
-                // 读取文章并解析生成卡片
+                // 解析单词
                 println!("\n📖 读取输入文件: {}", creator.config.input.text_file);
                 let text_content = match std::fs::read_to_string(&creator.config.input.text_file) {
                     Ok(content) => {
@@ -69,20 +70,59 @@ async fn main() -> Result<()> {
                 };
                 println!("📝 文本预览: {}", preview);
 
-                // 处理文本
-                match creator.process_japanese_text(&text_content).await {
+                // 只处理单词
+                match creator.process_words_only(&text_content).await {
                     Ok(_) => {
-                        println!("\n🎉 完成！生成的文件：");
+                        println!("\n🎉 单词解析完成！生成的文件：");
                         println!("   📄 {} - 单词卡片", creator.config.output.words_file);
-                        println!("   📄 {} - 语法卡片", creator.config.output.grammar_file);
                         println!("   🗄️  {} - SQLite 数据库", creator.config.database.db_file);
                     },
                     Err(e) => {
-                        println!("❌ 处理文本时出错: {}", e);
+                        println!("❌ 处理单词时出错: {}", e);
                     }
                 }
             },
             2 => {
+                // 解析语法
+                println!("\n📖 读取输入文件: {}", creator.config.input.text_file);
+                let text_content = match std::fs::read_to_string(&creator.config.input.text_file) {
+                    Ok(content) => {
+                        if content.trim().is_empty() {
+                            println!("⚠️  警告: 输入文件为空");
+                            continue;
+                        }
+                        content
+                    },
+                    Err(e) => {
+                        println!("❌ 无法读取输入文件 '{}': {}", creator.config.input.text_file, e);
+                        println!("💡 请检查文件路径是否正确，文件是否存在");
+                        continue;
+                    }
+                };
+
+                println!("✅ 文件读取成功，内容长度: {} 字符", text_content.chars().count());
+                
+                // 显示文件内容的前100个字符作为预览
+                let preview = if text_content.chars().count() > 100 {
+                    format!("{}...", text_content.chars().take(100).collect::<String>())
+                } else {
+                    text_content.clone()
+                };
+                println!("📝 文本预览: {}", preview);
+
+                // 只处理语法
+                match creator.process_grammar_only(&text_content).await {
+                    Ok(_) => {
+                        println!("\n🎉 语法解析完成！生成的文件：");
+                        println!("   📄 {} - 语法卡片", creator.config.output.grammar_file);
+                        println!("   🗄️  {} - SQLite 数据库", creator.config.database.db_file);
+                    },
+                    Err(e) => {
+                        println!("❌ 处理语法时出错: {}", e);
+                    }
+                }
+            },
+            3 => {
                 // 更新所有单词词性
                 println!("\n🔄 开始更新所有单词词性功能...");
                 match creator.update_all_word_parts_of_speech().await {
@@ -109,7 +149,7 @@ async fn main() -> Result<()> {
                     }
                 }
             },
-            3 => {
+            4 => {
                 // 重新生成卡片文件
                 println!("\n📄 重新生成卡片文件...");
                 match creator.generate_word_cards().await {
@@ -126,7 +166,7 @@ async fn main() -> Result<()> {
                     Err(e) => println!("❌ 生成单词卡片时出错: {}", e),
                 }
             },
-            4 => {
+            5 => {
                 // 更新所有单词解析
                 println!("\n🔄 开始更新所有单词解析功能...");
                 match creator.update_all_word_analysis().await {
@@ -153,7 +193,7 @@ async fn main() -> Result<()> {
                     }
                 }
             },
-            5 => {
+            6 => {
                 // 根据ID更新单词解析
                 println!("\n🔄 根据ID更新单词解析功能...");
                 print!("请输入要更新的单词ID: ");
@@ -198,7 +238,7 @@ async fn main() -> Result<()> {
                 break;
             },
             _ => {
-                println!("❌ 无效选项，请输入 0-5 之间的数字");
+                println!("❌ 无效选项，请输入 0-6 之间的数字");
             }
         }
         

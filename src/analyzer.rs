@@ -464,20 +464,17 @@ impl AnkiCreator {
         Ok(())
     }
 
-    // 处理日语文本的主要函数
-    pub async fn process_japanese_text(&self, text: &str) -> Result<()> {
+    // 只处理单词的函数
+    pub async fn process_words_only(&self, text: &str) -> Result<()> {
         let text_length = text.chars().count();
         println!("📝 输入文本长度: {} 字符", text_length);
         
-        println!("🔄 第一步：提取单词和语法...");
+        println!("🔄 第一步：提取单词...");
         
         // 直接处理整个文本，不再分块
         let extraction = self.extract_words_and_grammar(text).await?;
         
-        println!("📝 找到 {} 个单词，{} 个语法点", 
-            extraction.words.len(), 
-            extraction.grammar.len()
-        );
+        println!("📝 找到 {} 个单词", extraction.words.len());
 
         println!("🔄 第二步：按单词分组并检查重复...");
         
@@ -557,10 +554,42 @@ impl AnkiCreator {
         
         // 展平结果
         let new_word_analyses: Vec<WordAnalysis> = word_analyses_results?.into_iter().flatten().collect();
+
+        println!("💾 保存分析结果到数据库...");
+
+        // 保存新分析的单词到数据库
+        if !new_word_analyses.is_empty() {
+            self.db_manager.save_words(&new_word_analyses).await?;
+            println!("  ✅ 保存了 {} 个新单词到数据库", new_word_analyses.len());
+        } else {
+            println!("  ℹ️  没有新单词需要保存");
+        }
+
+        println!("📄 生成单词 Anki 卡片文件...");
+
+        // 生成单词 Anki 卡片
+        self.generate_word_cards().await?;
         
-        println!("🔄 第三步：并发详细分析每个语法点...");
+        Ok(())
+    }
+
+    // 只处理语法的函数
+    pub async fn process_grammar_only(&self, text: &str) -> Result<()> {
+        let text_length = text.chars().count();
+        println!("📝 输入文本长度: {} 字符", text_length);
+        
+        println!("🔄 第一步：提取语法...");
+        
+        // 直接处理整个文本，不再分块
+        let extraction = self.extract_words_and_grammar(text).await?;
+        
+        println!("📝 找到 {} 个语法点", extraction.grammar.len());
+        
+        println!("🔄 第二步：并发详细分析每个语法点...");
         
         // 使用并发处理语法分析
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(self.config.processing.concurrent_requests));
+        
         let grammar_analyses: Result<Vec<GrammarAnalysis>, anyhow::Error> = stream::iter(extraction.grammar.into_iter().enumerate())
             .map(|(i, grammar)| {
                 let semaphore = semaphore.clone();
@@ -587,23 +616,16 @@ impl AnkiCreator {
         let grammar_analyses = grammar_analyses?;
 
         println!("💾 保存分析结果到数据库...");
-
-        // 保存新分析的单词到数据库
-        if !new_word_analyses.is_empty() {
-            self.db_manager.save_words(&new_word_analyses).await?;
-            println!("  ✅ 保存了 {} 个新单词到数据库", new_word_analyses.len());
-        } else {
-            println!("  ℹ️  没有新单词需要保存");
-        }
         
         self.db_manager.save_grammar(&grammar_analyses).await?;
         
-        println!("📄 生成 Anki 卡片文件...");
+        println!("📄 生成语法 Anki 卡片文件...");
 
-        // 生成 Anki 卡片
-        self.generate_word_cards().await?;
+        // 生成语法 Anki 卡片
         self.generate_grammar_cards().await?;
         
         Ok(())
     }
+
+
 }
