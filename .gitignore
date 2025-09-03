@@ -7,3 +7,8 @@ WARP.md
 anki_cards.db
 japanese_words.csv
 japanese_grammar.csv
+
+# 配置文件（包含API密钥）
+config.toml
+
+input.txt
