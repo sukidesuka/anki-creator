@@ -8,8 +8,10 @@ fn show_menu() -> Result<i32> {
     println!("1. 读取文章并解析生成卡片");
     println!("2. 更新所有单词词性");
     println!("3. 重新生成卡片文件");
+    println!("4. 更新所有单词解析");
+    println!("5. 根据ID更新单词解析");
     println!("0. 退出程序");
-    print!("请输入选项 (0-3): ");
+    print!("请输入选项 (0-5): ");
     
     use std::io::{self, Write};
     io::stdout().flush()?;
@@ -124,12 +126,79 @@ async fn main() -> Result<()> {
                     Err(e) => println!("❌ 生成单词卡片时出错: {}", e),
                 }
             },
+            4 => {
+                // 更新所有单词解析
+                println!("\n🔄 开始更新所有单词解析功能...");
+                match creator.update_all_word_analysis().await {
+                    Ok(_) => {
+                        println!("✅ 所有单词解析更新完成");
+                        
+                        // 询问是否重新生成卡片
+                        println!("\n是否重新生成卡片文件？(y/N): ");
+                        use std::io::{self, Write};
+                        io::stdout().flush().unwrap();
+                        
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input).unwrap();
+                        
+                        if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
+                            match creator.generate_word_cards().await {
+                                Ok(_) => println!("✅ 单词卡片重新生成完成"),
+                                Err(e) => println!("❌ 生成单词卡片时出错: {}", e),
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        println!("❌ 更新单词解析时出错: {}", e);
+                    }
+                }
+            },
+            5 => {
+                // 根据ID更新单词解析
+                println!("\n🔄 根据ID更新单词解析功能...");
+                print!("请输入要更新的单词ID: ");
+                use std::io::{self, Write};
+                io::stdout().flush().unwrap();
+                
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).unwrap();
+                
+                match input.trim().parse::<i64>() {
+                    Ok(id) => {
+                        match creator.update_word_analysis_by_id(id).await {
+                            Ok(_) => {
+                                println!("✅ 单词解析更新完成");
+                                
+                                // 询问是否重新生成卡片
+                                println!("\n是否重新生成卡片文件？(y/N): ");
+                                io::stdout().flush().unwrap();
+                                
+                                let mut input = String::new();
+                                io::stdin().read_line(&mut input).unwrap();
+                                
+                                if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
+                                    match creator.generate_word_cards().await {
+                                        Ok(_) => println!("✅ 单词卡片重新生成完成"),
+                                        Err(e) => println!("❌ 生成单词卡片时出错: {}", e),
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                println!("❌ 更新单词解析时出错: {}", e);
+                            }
+                        }
+                    },
+                    Err(_) => {
+                        println!("❌ 无效的ID，请输入一个有效的数字");
+                    }
+                }
+            },
             0 => {
                 println!("👋 再见！");
                 break;
             },
             _ => {
-                println!("❌ 无效选项，请输入 0-3 之间的数字");
+                println!("❌ 无效选项，请输入 0-5 之间的数字");
             }
         }
         

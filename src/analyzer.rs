@@ -158,6 +158,136 @@ impl AnkiCreator {
         Ok(())
     }
 
+    // 更新所有单词的解析
+    pub async fn update_all_word_analysis(&self) -> Result<()> {
+        println!("🔄 开始更新所有单词的解析...");
+        
+        // 获取所有单词记录
+        let words = self.db_manager.get_all_words().await?;
+        
+        if words.is_empty() {
+            println!("⚠️  数据库中没有找到任何单词");
+            return Ok(());
+        }
+        
+        println!("📊 找到 {} 个单词需要更新解析", words.len());
+        
+        // 使用并发流处理所有单词
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(self.config.processing.concurrent_requests));
+        
+        let total_words = words.len();
+        let update_results: Result<Vec<()>, anyhow::Error> = stream::iter(words.into_iter().enumerate())
+            .map(|(i, word)| {
+                let semaphore = semaphore.clone();
+                let analyzer = self;
+                async move {
+                    let _permit = semaphore.acquire().await.unwrap();
+                    
+                    println!("  🔍 更新单词解析 {}/{}: {} ({})", 
+                        i + 1, total_words, word.word, word.kana);
+                    
+                    // 复用现有的分析逻辑
+                    let parts_of_speech: Vec<&str> = word.part_of_speech.split('｜').collect();
+                    let parts_of_speech_vec: Vec<String> = parts_of_speech.iter().map(|s| s.to_string()).collect();
+                    
+                    let basic_word = BasicWordInfo {
+                        word: word.word.clone(),
+                        kana: word.kana.clone(),
+                        pitch: word.pitch.clone(),
+                        part_of_speech: parts_of_speech_vec.clone(),
+                    };
+                    
+                    match analyzer.analyze_word_with_multiple_pos(&basic_word, &parts_of_speech_vec).await {
+                        Ok(new_analysis) => {
+                            // 检查解析是否有变化
+                            if word.analysis != new_analysis {
+                                println!("    🔄 解析更新: 长度 {} -> {}", 
+                                    word.analysis.len(), new_analysis.len());
+                                
+                                // 更新数据库中的解析
+                                if let Err(e) = analyzer.db_manager.update_word_analysis(word.id, &new_analysis).await {
+                                    println!("    ❌ 更新失败: {}", e);
+                                } else {
+                                    println!("    ✅ 更新成功");
+                                }
+                            } else {
+                                println!("    ✅ 解析无变化，跳过更新");
+                            }
+                        },
+                        Err(e) => {
+                            println!("    ❌ 分析失败: {}", e);
+                        }
+                    }
+                    
+                    // 添加延迟以避免过于频繁的请求
+                    tokio::time::sleep(tokio::time::Duration::from_millis(
+                        analyzer.config.processing.request_delay_ms
+                    )).await;
+                    
+                    Ok(())
+                }
+            })
+            .buffer_unordered(self.config.processing.concurrent_requests)
+            .collect::<Vec<Result<(), anyhow::Error>>>()
+            .await
+            .into_iter()
+            .collect();
+        
+        update_results?;
+        
+        println!("🎉 所有单词解析更新完成！");
+        Ok(())
+    }
+
+    // 根据ID更新单词解析
+    pub async fn update_word_analysis_by_id(&self, id: i64) -> Result<()> {
+        println!("🔄 开始根据ID更新单词解析...");
+        
+        // 获取指定ID的单词
+        let word = match self.db_manager.get_word_by_id(id).await? {
+            Some(word) => word,
+            None => {
+                println!("❌ 未找到ID为 {} 的单词", id);
+                return Ok(());
+            }
+        };
+        
+        println!("📝 找到单词: {} ({}) - {}", word.word, word.kana, word.part_of_speech);
+        
+        // 复用现有的分析逻辑
+        let parts_of_speech: Vec<&str> = word.part_of_speech.split('｜').collect();
+        let parts_of_speech_vec: Vec<String> = parts_of_speech.iter().map(|s| s.to_string()).collect();
+        
+        let basic_word = BasicWordInfo {
+            word: word.word.clone(),
+            kana: word.kana.clone(),
+            pitch: word.pitch.clone(),
+            part_of_speech: parts_of_speech_vec.clone(),
+        };
+        
+        match self.analyze_word_with_multiple_pos(&basic_word, &parts_of_speech_vec).await {
+            Ok(new_analysis) => {
+                // 检查解析是否有变化
+                if word.analysis != new_analysis {
+                    println!("🔄 解析更新: 长度 {} -> {}", 
+                        word.analysis.len(), new_analysis.len());
+                    
+                    // 更新数据库中的解析
+                    self.db_manager.update_word_analysis(id, &new_analysis).await?;
+                    println!("✅ 单词解析更新成功");
+                } else {
+                    println!("✅ 解析无变化，跳过更新");
+                }
+            },
+            Err(e) => {
+                println!("❌ 分析失败: {}", e);
+                return Err(e);
+            }
+        }
+        
+        Ok(())
+    }
+
     // 第一步：提取单词和语法的基本信息
     pub async fn extract_words_and_grammar(&self, text: &str) -> Result<ExtractionResult> {
         let prompt = format!(r#"
@@ -413,7 +543,7 @@ impl AnkiCreator {
                         kana: word.kana.clone(),
                         pitch: word.pitch.clone(),
                         part_of_speech: merged_parts_of_speech,
-                        analysis: format!("{} [音调: {}]", analysis, word.pitch),
+                        analysis: analysis,
                     };
                     
                     Ok(vec![word_analysis])

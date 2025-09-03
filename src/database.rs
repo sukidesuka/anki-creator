@@ -275,6 +275,31 @@ impl DatabaseManager {
         Ok(())
     }
 
+    // 更新单词解析
+    pub async fn update_word_analysis(&self, id: i64, new_analysis: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE words SET analysis = ?, updated_at = datetime('now') WHERE id = ?"
+        )
+        .bind(new_analysis)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        
+        Ok(())
+    }
+
+    // 根据ID获取单词信息
+    pub async fn get_word_by_id(&self, id: i64) -> Result<Option<JapaneseWord>> {
+        let word = sqlx::query_as::<_, JapaneseWord>(
+            "SELECT id, word, kana, pitch, part_of_speech, analysis, updated_at FROM words WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        
+        Ok(word)
+    }
+
     // 保存语法到数据库
     pub async fn save_grammar(&self, grammar: &[GrammarAnalysis]) -> Result<()> {
         for item in grammar {
