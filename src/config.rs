@@ -9,6 +9,7 @@ pub struct Config {
     pub database: DatabaseConfig,
     pub output: OutputConfig,
     pub input: InputConfig,
+    pub tts: TtsConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -33,11 +34,19 @@ pub struct DatabaseConfig {
 pub struct OutputConfig {
     pub words_file: String,
     pub grammar_file: String,
+    pub audio_dir: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct InputConfig {
     pub text_file: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TtsConfig {
+    pub azure_speech_key: String,
+    pub azure_speech_region: String,
+    pub azure_voice_name: String,
 }
 
 impl Config {

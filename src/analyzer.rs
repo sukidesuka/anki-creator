@@ -6,6 +6,7 @@ use crate::api::{ApiClient, OpenRouterRequest, RequestMessage};
 use crate::config::Config;
 use crate::database::{DatabaseManager, generate_word_cards, generate_grammar_cards};
 use crate::models::*;
+use crate::tts::{AzureTts, TtsConfig};
 
 pub struct AnkiCreator {
     api_client: ApiClient,
@@ -623,6 +624,90 @@ impl AnkiCreator {
 
         // 生成语法 Anki 卡片
         self.generate_grammar_cards().await?;
+        
+        Ok(())
+    }
+
+    /// 增量生成音频文件
+    pub async fn generate_missing_audio_files(&self) -> Result<()> {
+        println!("🎵 开始增量生成音频文件...");
+        
+        // 确保音频目录存在
+        std::fs::create_dir_all(&self.config.output.audio_dir)
+            .map_err(|e| anyhow::anyhow!("无法创建音频目录 {}: {}", self.config.output.audio_dir, e))?;
+        
+        // 获取所有单词
+        let words = self.db_manager.get_all_words().await?;
+        
+        if words.is_empty() {
+            println!("⚠️  数据库中没有找到任何单词");
+            return Ok(());
+        }
+        
+        println!("📊 找到 {} 个单词，检查缺失的音频文件...", words.len());
+        
+        // 创建 TTS 客户端
+        let tts_config = TtsConfig::from_config(&self.config.tts);
+        let tts = AzureTts::new(tts_config);
+        
+        let mut missing_count = 0;
+        let mut generated_count = 0;
+        
+        // 使用并发流处理所有单词
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(self.config.processing.concurrent_requests));
+        
+        let total_words = words.len();
+        let results: Vec<Result<(), anyhow::Error>> = stream::iter(words.into_iter().enumerate())
+            .map(|(i, word)| {
+                let semaphore = semaphore.clone();
+                let tts = &tts;
+                let audio_dir = &self.config.output.audio_dir;
+                async move {
+                    let _permit = semaphore.acquire().await.unwrap();
+                    
+                    let audio_filename = format!("japanese_word_{}.wav", word.id);
+                    let audio_path = std::path::Path::new(audio_dir).join(&audio_filename);
+                    
+                    // 检查音频文件是否存在
+                    if audio_path.exists() {
+                        println!("  ✅ 音频文件已存在: {} ({})", audio_filename, word.word);
+                        return Ok(());
+                    }
+                    
+                    println!("  🎵 生成音频文件 {}/{}: {} ({})", 
+                        i + 1, total_words, audio_filename, word.kana);
+                    
+                    // 生成音频文件，使用假名（发音）而不是汉字
+                    match tts.synthesize_text_to_file(&word.kana, &audio_path.to_string_lossy()).await {
+                        Ok(_) => {
+                            println!("  ✅ 音频文件生成成功: {}", audio_filename);
+                            Ok(())
+                        },
+                        Err(e) => {
+                            println!("  ❌ 音频文件生成失败: {} - {}", audio_filename, e);
+                            Err(e)
+                        }
+                    }
+                }
+            })
+            .buffer_unordered(self.config.processing.concurrent_requests)
+            .collect::<Vec<_>>()
+            .await;
+        
+        // 统计结果
+        for result in results {
+            match result {
+                Ok(_) => generated_count += 1,
+                Err(_) => missing_count += 1,
+            }
+        }
+        
+        println!("\n🎉 音频文件生成完成！");
+        println!("   ✅ 成功生成: {} 个音频文件", generated_count);
+        if missing_count > 0 {
+            println!("   ❌ 生成失败: {} 个音频文件", missing_count);
+        }
+        println!("   📁 音频文件目录: {}", self.config.output.audio_dir);
         
         Ok(())
     }

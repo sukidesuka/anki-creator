@@ -367,18 +367,23 @@ pub fn generate_word_cards(words: &[JapaneseWord], output_file: &str) -> Result<
         // 生成正面内容（HTML格式）
         let word_with_pitch = format!("{}{}", word.word, pitch_to_superscript(&pitch));
         
+        // 添加语音文件引用
+        let audio_tag = format!("[sound:japanese_word_{}.wav]", word.id);
+        
         let front = if word.word == word.kana {
             // 只有假名的情况
             format!(
-                "<div style=\"font-size: 20px; font-weight: bold;\">{}</div><div style=\"font-size: 14px; color: #666; margin-top: 5px;\">{}</div>",
+                "<div style=\"font-size: 20px; font-weight: bold;\">{} {}</div><div style=\"font-size: 14px; color: #666; margin-top: 5px;\">{}</div>",
                 word_with_pitch,
+                audio_tag,
                 parts_of_speech.join("·")
             )
         } else {
             // 有汉字和假名的情况
             format!(
-                "<div style=\"font-size: 20px; font-weight: bold;\">{}</div><div style=\"font-size: 16px; margin-top: 2px;\">{}</div><div style=\"font-size: 14px; color: #666; margin-top: 3px;\">{}</div>",
+                "<div style=\"font-size: 20px; font-weight: bold;\">{} {}</div><div style=\"font-size: 16px; margin-top: 2px;\">{}</div><div style=\"font-size: 14px; color: #666; margin-top: 3px;\">{}</div>",
                 word_with_pitch,
+                audio_tag,
                 word.kana,
                 parts_of_speech.join("·")
             )
@@ -402,11 +407,15 @@ pub fn generate_grammar_cards(grammar: &[JapaneseGrammar], output_file: &str) ->
     
     for item in grammar {
         // 生成正面内容：语法表达和假名用｜隔开，如果重复则省略
-        let front = if item.word == item.kana {
+        let front_content = if item.word == item.kana {
             item.word.clone()
         } else {
             format!("{}｜{}", item.word, item.kana)
         };
+        
+        // 添加语音文件引用
+        let audio_tag = format!("[sound:japanese_word_{}.wav]", item.id);
+        let front = format!("{} {}", front_content, audio_tag);
         
         // CSV 格式：id:正面:背面:标签（语法标签为"语法"）
         writeln!(file, "{}:\"{}\":\"{}\":\"语法\"", 
