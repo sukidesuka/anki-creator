@@ -1,4 +1,4 @@
-use anyhow::Result;
+    use anyhow::Result;
 use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 
@@ -496,14 +496,35 @@ impl AnkiCreator {
         
         // 检查哪些单词已存在，哪些需要分析
         let mut words_to_analyze = Vec::new();
+        let mut words_to_update: Vec<(i64, String, String)> = Vec::new();
         let mut skipped_count = 0;
         
         for ((word, kana, pitch), parts_of_speech) in word_groups.iter() {
-            let exists = self.db_manager.check_word_exists(word, kana, pitch).await?;
+            let exists = self.db_manager.check_word_exists(word, kana).await?;
             
             if exists {
-                skipped_count += 1;
-                println!("  ✅ 跳过已存在的单词: {} ({})", word, kana);
+                // 获取已存在的单词信息
+                if let Some(existing_word) = self.db_manager.get_existing_word_by_word_kana(word, kana).await? {
+                    let new_pos_str = parts_of_speech.join("｜");
+                    
+                    // 检查是否需要更新 pitch 或词性
+                    if existing_word.pitch != *pitch || existing_word.part_of_speech != new_pos_str {
+                        println!("  🔄 更新已存在单词: {} ({}) - pitch: {}->{}, pos: {}->{}", 
+                            word, kana, 
+                            existing_word.pitch, pitch,
+                            existing_word.part_of_speech, new_pos_str
+                        );
+                        
+                        words_to_update.push((existing_word.id, pitch.clone(), new_pos_str));
+                    } else {
+                        skipped_count += 1;
+                        println!("  ✅ 跳过已存在的单词（无变化）: {} ({})", word, kana);
+                    }
+                } else {
+                    // 理论上不应该到这里，但为了安全起见
+                    skipped_count += 1;
+                    println!("  ⚠️不应该到这里，跳过已存在的单词: {} ({})", word, kana);
+                }
             } else {
                 let basic_word = BasicWordInfo {
                     word: word.clone(),
@@ -515,10 +536,23 @@ impl AnkiCreator {
             }
         }
 
-        println!("  跳过 {} 个已存在的单词，需要分析 {} 个新单词", 
+        println!("  跳过 {} 个已存在的单词，需要更新 {} 个单词，需要分析 {} 个新单词", 
             skipped_count, 
+            words_to_update.len(),
             words_to_analyze.len()
         );
+
+        // 先更新已存在的单词
+        if !words_to_update.is_empty() {
+            println!("🔄 更新已存在单词的 pitch 和词性...");
+            for (id, new_pitch, new_pos) in words_to_update {
+                if let Err(e) = self.db_manager.update_word_pitch_and_pos(id, &new_pitch, &new_pos).await {
+                    println!("  ❌ 更新失败: ID {} - {}", id, e);
+                } else {
+                    println!("  ✅ 更新成功: ID {} - pitch: {}, pos: {}", id, new_pitch, new_pos);
+                }
+            }
+        }
         
         // 使用并发流处理所有单词
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(self.config.processing.concurrent_requests));

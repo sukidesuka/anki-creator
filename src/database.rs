@@ -150,18 +150,30 @@ impl DatabaseManager {
         Ok(())
     }
 
-    // 检查单词是否已存在（根据单词、假名、读音，不依据词性）
-    pub async fn check_word_exists(&self, word: &str, kana: &str, pitch: &str) -> Result<bool> {
+    // 检查单词是否已存在（根据单词、假名，不依据音调和词性）
+    pub async fn check_word_exists(&self, word: &str, kana: &str) -> Result<bool> {
         let count: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM words WHERE word = ? AND kana = ? AND pitch = ?"
+            "SELECT COUNT(*) FROM words WHERE word = ? AND kana = ?"
         )
         .bind(word)
-        .bind(kana) 
-        .bind(pitch)
+        .bind(kana)
         .fetch_one(&self.pool)
         .await?;
         
         Ok(count.0 > 0)
+    }
+
+    // 获取已存在的单词信息（只基于 word 和 kana）
+    pub async fn get_existing_word_by_word_kana(&self, word: &str, kana: &str) -> Result<Option<JapaneseWord>> {
+        let result = sqlx::query_as::<_, JapaneseWord>(
+            "SELECT id, word, kana, pitch, part_of_speech, analysis, updated_at FROM words WHERE word = ? AND kana = ? LIMIT 1"
+        )
+        .bind(word)
+        .bind(kana)
+        .fetch_optional(&self.pool)
+        .await?;
+        
+        Ok(result)
     }
 
     // 获取已存在的单词信息（支持多词性合并）
@@ -271,6 +283,68 @@ impl DatabaseManager {
         .bind(id)
         .execute(&self.pool)
         .await?;
+        
+        Ok(())
+    }
+
+    // 更新单词的 pitch 和词性（处理唯一约束冲突）
+    pub async fn update_word_pitch_and_pos(&self, id: i64, new_pitch: &str, new_pos: &str) -> Result<()> {
+        // 首先获取当前记录的信息
+        let current_word = self.get_word_by_id(id).await?;
+        if current_word.is_none() {
+            return Err(anyhow::anyhow!("单词 ID {} 不存在", id));
+        }
+        let current = current_word.unwrap();
+        
+        // 检查是否存在相同 (word, kana, pitch) 的其他记录
+        let existing_conflict = sqlx::query_as::<_, JapaneseWord>(
+            "SELECT id, word, kana, pitch, part_of_speech, analysis, updated_at FROM words WHERE word = ? AND kana = ? AND pitch = ? AND id != ? LIMIT 1"
+        )
+        .bind(&current.word)
+        .bind(&current.kana)
+        .bind(new_pitch)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        
+        if let Some(conflict_record) = existing_conflict {
+            // 如果存在冲突记录，删除冲突记录，然后更新当前记录
+            println!("  🔄 发现冲突记录，删除旧记录 ID {}，更新当前记录 ID {}", 
+                conflict_record.id, id
+            );
+            
+            // 删除冲突记录
+            sqlx::query("DELETE FROM words WHERE id = ?")
+                .bind(conflict_record.id)
+                .execute(&self.pool)
+                .await?;
+            
+            // 更新当前记录
+            sqlx::query(
+                "UPDATE words SET pitch = ?, part_of_speech = ?, updated_at = datetime('now') WHERE id = ?"
+            )
+            .bind(new_pitch)
+            .bind(new_pos)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+            
+            println!("  ✅ 冲突处理完成: {} ({}) - pitch: {}->{}, pos: {}->{}", 
+                current.word, current.kana, 
+                current.pitch, new_pitch,
+                current.part_of_speech, new_pos
+            );
+        } else {
+            // 没有冲突，直接更新
+            sqlx::query(
+                "UPDATE words SET pitch = ?, part_of_speech = ?, updated_at = datetime('now') WHERE id = ?"
+            )
+            .bind(new_pitch)
+            .bind(new_pos)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        }
         
         Ok(())
     }
