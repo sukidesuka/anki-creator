@@ -78,7 +78,7 @@ impl AnkiCreator {
 "#, word.word, word.kana, word.pitch);
 
                     let request = OpenRouterRequest {
-                        model: "google/gemini-2.5-flash".to_string(),
+                        model: self.config.api.models.word_analysis_model.clone(),
                         messages: vec![RequestMessage {
                             role: "user".to_string(),
                             content: prompt,
@@ -334,7 +334,7 @@ impl AnkiCreator {
 "#, text);
 
         let request = OpenRouterRequest {
-            model: "google/gemini-2.5-flash".to_string(),
+            model: self.config.api.models.extraction_model.clone(),
             messages: vec![RequestMessage {
                 role: "user".to_string(),
                 content: prompt,
@@ -401,7 +401,7 @@ impl AnkiCreator {
 "#, word.word, word.kana, word.pitch, pos_list);
 
         let request = OpenRouterRequest {
-            model: "google/gemini-2.5-flash".to_string(),
+            model: self.config.api.models.word_analysis_model.clone(),
             messages: vec![RequestMessage {
                 role: "user".to_string(),
                 content: prompt,
@@ -436,7 +436,7 @@ impl AnkiCreator {
 "#, grammar.grammar, grammar.kana);
 
         let request = OpenRouterRequest {
-            model: "google/gemini-2.5-flash".to_string(),
+            model: self.config.api.models.grammar_analysis_model.clone(),
             messages: vec![RequestMessage {
                 role: "user".to_string(),
                 content: prompt,

@@ -15,6 +15,14 @@ pub struct Config {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ApiConfig {
     pub openrouter_key: String,
+    pub models: ModelConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ModelConfig {
+    pub extraction_model: String,
+    pub word_analysis_model: String,
+    pub grammar_analysis_model: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
